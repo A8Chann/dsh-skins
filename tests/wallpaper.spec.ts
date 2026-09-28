@@ -880,8 +880,12 @@ describe('WallpaperController', () => {
     expect(neutralizer?.textContent).toContain('-webkit-backdrop-filter: none !important;')
     expect(neutralizer?.textContent).not.toContain('html[data-dsh-backdrop-active][data-dsh-conversation-content] [data-composer-seat] {')
     expect(neutralizer?.textContent).not.toContain('var(--dsw-alias-bg-overlay) 36px')
-    expect(neutralizer?.textContent).toContain('html[data-dsh-backdrop-active][data-dsh-conversation-content] [data-composer-card]')
+    // The frost rides the body-level follower, NOT the card: a backdrop-filter
+    // on the card would make it the containing block for the shell's fixed
+    // tooltips and jolt the conversation on every composer hover (#1724).
+    expect(neutralizer?.textContent).toContain('html[data-dsh-backdrop-active][data-dsh-conversation-content] [data-dsh-composer-frost]')
     expect(neutralizer?.textContent).toContain('backdrop-filter: blur(var(--dsh-input-card-blur, 10px)) !important;')
+    expect(neutralizer?.textContent).not.toContain('[data-composer-card] {')
     // Empty conversation: the content marker is absent, so the frost is off.
     expect(document.body.hasAttribute('data-dsh-conversation-content')).toBe(false)
     // A topic-picker or outgoing-session row outside the active scrollport

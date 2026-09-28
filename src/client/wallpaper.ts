@@ -263,6 +263,20 @@ function isExcludedWallpaperSurface(el: HTMLElement, zIndex: string): boolean {
 }
 
 /**
+ * Whether one media-layer child is the sandboxed scene-player frame.
+ *
+ * Read from the node (tagName) instead of `instanceof HTMLIFrameElement`: the
+ * ambient globals belong to the app's realm, and the wallpaper paths run
+ * against elements from documents whose realm those bindings cannot see, where
+ * the `instanceof` reference throws rather than answering false.
+ * @param node - the candidate element.
+ * @returns true when it is an iframe.
+ */
+function isScenePlayer(node: Element | null): node is HTMLIFrameElement {
+  return node !== null && node.tagName === 'IFRAME'
+}
+
+/**
  * Default shell-surface detector for WE wallpaper neutralization (#712). A
  * target must cover most of the visible viewport and paint a nontransparent
  * background. It deliberately avoids equality against a theme token because
@@ -782,7 +796,7 @@ export class WallpaperController implements WallpaperHandle {
 
   recoverScenePlayer(): void {
     const scenePlayer = this.mediaLayer?.firstElementChild ?? null
-    if (!(scenePlayer instanceof HTMLIFrameElement) || scenePlayer.dataset.dshScenePlayer !== '') return
+    if (!isScenePlayer(scenePlayer) || scenePlayer.dataset.dshScenePlayer !== '') return
     try {
       // The sandboxed player has an opaque origin, so a same-origin target
       // would never match it; '*' delivers to the single identified window.
@@ -882,7 +896,7 @@ export class WallpaperController implements WallpaperHandle {
 
   private readonly onSceneMessage = (event: MessageEvent): void => {
     const scenePlayer = this.mediaLayer?.firstElementChild ?? null
-    if (!(scenePlayer instanceof HTMLIFrameElement) || scenePlayer.dataset.dshScenePlayer !== '') return
+    if (!isScenePlayer(scenePlayer) || scenePlayer.dataset.dshScenePlayer !== '') return
     // The player is sandboxed without allow-same-origin, so its opaque origin
     // arrives as Origin "null"; only the identity of the sender (this exact
     // iframe window) proves the message came from the mounted player.
@@ -905,7 +919,7 @@ export class WallpaperController implements WallpaperHandle {
       }
     }
     const scenePlayer = this.mediaLayer?.firstElementChild ?? null
-    if (scenePlayer instanceof HTMLIFrameElement && scenePlayer.dataset.dshScenePlayer === '') {
+    if (isScenePlayer(scenePlayer) && scenePlayer.dataset.dshScenePlayer === '') {
       try {
         // '*' reaches the opaque-origin sandboxed player (see applyFit).
         scenePlayer.contentWindow?.postMessage({ type: 'dsh-set-pause', paused: this.doc.hidden }, '*')
@@ -1042,7 +1056,12 @@ export class WallpaperController implements WallpaperHandle {
         // The initial play() in buildVideo ran while the element was detached
         // and may have been rejected; retry once mounted so large files start
         // streaming without a user gesture (#805 loading).
-        if (child instanceof HTMLVideoElement && child.paused) {
+        // Kind and constructor both come from the WINDOW, never from the
+        // module's ambient globals: the sandboxed wallpaper lane renders into
+        // another realm, where `HTMLVideoElement` is not the class of the node
+        // and the bare reference can throw (same rule as isScenePlayer).
+        const VideoCtor = this.doc.defaultView?.HTMLVideoElement
+        if (VideoCtor !== undefined && child instanceof VideoCtor && child.paused) {
           void child.play()?.catch(() => { /* retried on first gesture */ })
         }
       }
@@ -1075,10 +1094,14 @@ export class WallpaperController implements WallpaperHandle {
   /** Push the current sizing mode onto the mounted media element. */
   private applyFit(): void {
     const child = this.mediaLayer?.firstElementChild ?? null
-    if (child instanceof HTMLElement) {
-      styleCover(child, this.fitValue)
+    // Element kind is read from the node itself (tagName/nodeType), never from
+    // an `instanceof` against the ambient global: those bindings belong to the
+    // app's realm, and the sandboxed wallpaper lane has its own document whose
+    // realm the module's globals cannot see (the ReferenceError this replaces).
+    if (child !== null && child.nodeType === 1) {
+      styleCover(child as HTMLElement, this.fitValue)
     }
-    if (child instanceof HTMLIFrameElement && child.dataset.dshScenePlayer === '') {
+    if (child !== null && isScenePlayer(child) && child.dataset.dshScenePlayer === '') {
       try {
         // The player frame is sandboxed without allow-same-origin, so its
         // origin is opaque and a real-origin targetOrigin would drop the
@@ -1293,9 +1316,9 @@ export class WallpaperController implements WallpaperHandle {
       while (stack.length > 0) {
         const node = stack.pop()
         if (node === undefined) continue
-        if (node instanceof HTMLElement && !node.hasAttribute('data-dsh-wallpaper-surface') && isSurface(node)) {
+        if (node.nodeType === 1 && !node.hasAttribute('data-dsh-wallpaper-surface') && isSurface(node as HTMLElement)) {
           node.setAttribute('data-dsh-wallpaper-surface', '')
-          this.taggedSurfaces.add(node)
+          this.taggedSurfaces.add(node as HTMLElement)
         }
         for (const child of Array.from(node.children)) stack.push(child)
       }
@@ -1312,9 +1335,9 @@ export class WallpaperController implements WallpaperHandle {
     while (stack.length > 0) {
       const node = stack.pop()
       if (node === undefined) continue
-      if (node instanceof HTMLElement && !node.hasAttribute('data-dsh-wallpaper-surface') && isFade(node, this.doc)) {
+      if (node.nodeType === 1 && !node.hasAttribute('data-dsh-wallpaper-surface') && isFade(node as HTMLElement, this.doc)) {
         node.setAttribute('data-dsh-wallpaper-surface', '')
-        this.taggedSurfaces.add(node)
+        this.taggedSurfaces.add(node as HTMLElement)
       }
       for (const child of Array.from(node.children)) stack.push(child)
     }
@@ -1335,15 +1358,27 @@ export class WallpaperController implements WallpaperHandle {
     this.surfaceObserver.observe(this.doc.body, { childList: true, subtree: true })
   }
 
-  /** Incrementally tag added subtrees and untag removed subtrees. */
+  /**
+   * Incrementally tag added subtrees and untag removed subtrees.
+   *
+   * Elements are recognised by nodeType, never by `instanceof HTMLElement`.
+   * Decision: element KIND is read from the node (nodeType / tagName), and a
+   * constructor test, where one is genuinely needed, comes from the owning
+   * document's window (`doc.defaultView.HTMLVideoElement`) — the same rule the
+   * video resume path below already follows. The ambient globals are a single
+   * realm's bindings: they do not describe elements from another document, and
+   * code that reached for them here threw a bare ReferenceError out of an
+   * observer callback. This is a deliberate repository-wide convention, not a
+   * workaround for one sandbox.
+   */
   private handleSurfaceMutations(records: MutationRecord[]): void {
     if (this.disposed || (this.previewing ?? this.applied) === null) return
     for (const record of records) {
       for (const node of record.addedNodes) {
-        if (node instanceof HTMLElement) this.tagAddedSubtree(node)
+        if (node.nodeType === 1) this.tagAddedSubtree(node as HTMLElement)
       }
       for (const node of record.removedNodes) {
-        if (node instanceof HTMLElement) this.untagRemovedSubtree(node)
+        if (node.nodeType === 1) this.untagRemovedSubtree(node as HTMLElement)
       }
     }
   }
@@ -1367,7 +1402,7 @@ export class WallpaperController implements WallpaperHandle {
         }
       }
       for (const child of Array.from(node.children)) {
-        if (child instanceof HTMLElement) stack.push(child)
+        if (child.nodeType === 1) stack.push(child as HTMLElement)
       }
     }
   }
@@ -1383,7 +1418,7 @@ export class WallpaperController implements WallpaperHandle {
         this.taggedSurfaces.delete(node)
       }
       for (const child of Array.from(node.children)) {
-        if (child instanceof HTMLElement) stack.push(child)
+        if (child.nodeType === 1) stack.push(child as HTMLElement)
       }
     }
   }

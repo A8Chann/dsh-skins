@@ -107,6 +107,58 @@ export const SEMANTIC_RULES_V1: readonly SemanticRule[] = [
   },
 ]
 
+/**
+ * The anchors the rule table keys on, as one attribute filter for the
+ * observer: a glyph or row anchor that is SET on an element already in the
+ * tree must re-anchor its ancestors exactly like a newly inserted one.
+ */
+const ANCHOR_ATTRIBUTES: readonly string[] = [
+  'data-dsh-panel-entry',
+  'data-dsh-surface',
+  'data-dsh-part',
+  'data-dsh-plugin',
+  'data-slot',
+  'data-chat-flow-kind',
+  'data-conversation-scroll',
+  'data-turn-tail',
+  'data-composer-input',
+  'data-queue-dock',
+  'data-rightbar-col',
+  'data-shell-overlay',
+  'data-dsh-taskboard-view',
+  'data-dsh-taskboard-board',
+  'data-dsh-ssh-view',
+  'data-dsh-pet-root',
+  'data-gitgraph-chip-anchor',
+  'data-gitgraph-dialog',
+  'data-decoration',
+  'data-streaming',
+  'data-side',
+  'data-phase',
+]
+// 'class' is deliberately absent: React sets className when it creates the
+// element, so a row whose class matters already carries it when the childList
+// record arrives, and class toggles are by far the most frequent attribute
+// traffic on the page. The filter stays on identity anchors.
+
+/**
+ * Safety bound of the ancestor walk, NOT a depth ceiling.
+ *
+ * The walk's normal terminator is the observed root: every node the observer
+ * can report is inside document.body, so the walk returns there (measured —
+ * with this bound removed the walk still stops at body on every delivery).
+ * This constant only fires for a change inside a subtree that is not connected
+ * to the observed root at all, where there is no ancestor to anchor yet and
+ * the node's own childList delivery stamps it once it IS attached.
+ *
+ * It is deliberately far above any real markup depth (the shell's own sidebar
+ * row is three hops deep) instead of a small number that would silently leave
+ * a deeper row unanchored — which is the very defect this walk exists to fix
+ * (issue #1732). A measured sweep anchors through 23 wrapper levels and misses
+ * from 24, i.e. only past the point where the tree is pathological.
+ */
+const ANCESTOR_HOPS = 24
+
 export interface SemanticAdapterDiagnostics {
   /** Rules whose selector the engine rejects (dropped, never retried). */
   invalidRules: string[]
@@ -176,6 +228,30 @@ export function createSemanticAdapter(doc: Document): SemanticAdapter {
     if (doc.documentElement) applyToTree(doc.documentElement)
   }
 
+  /**
+   * Re-anchor one changed node and its ancestor chain.
+   *
+   * applyToTree only walks DOWNWARD: a rule whose selector matches an ancestor
+   * of the changed node (the panel-list row is recognised by the glyph INSIDE
+   * it) is never re-evaluated when that descendant arrives. React mounts the
+   * row first and the registering plugin's glyph a tick later, so without this
+   * the row keeps no anchor at all until something forces a full pass
+   * (issue #1732). The walk is bounded and stops at the document root.
+   */
+  const reanchorAround = (node: Element): void => {
+    const root = doc.body ?? doc.documentElement
+    let current: Element | null = node
+    for (let hop = 0; current !== null && hop <= ANCESTOR_HOPS; hop += 1) {
+      for (const live of rules) {
+        if (live.usable) applyRule(live, current)
+      }
+      // Stop at the observed root: going further cannot reach a node the
+      // observer is even watching, and body is the ceiling it was given.
+      if (current === root || current === doc.documentElement) return
+      current = current.parentElement
+    }
+  }
+
   return {
     get running() {
       return running
@@ -189,14 +265,29 @@ export function createSemanticAdapter(doc: Document): SemanticAdapter {
         try {
           for (const record of records) {
             for (const node of Array.from(record.addedNodes)) {
-              if (node.nodeType === 1) applyToTree(node as Element)
+              if (node.nodeType !== 1) continue
+              const el = node as Element
+              applyToTree(el)
+              // The added subtree may itself be the glyph a row wants; the row
+              // is an ANCESTOR of it and applyToTree never looks up (#1732).
+              reanchorAround(el.parentElement ?? el)
             }
+            // A glyph whose ANCHOR is set on an element already in the tree
+            // (a re-render that flips the attribute instead of replacing the
+            // node) is the same signal, and childList alone never sees it.
+            const target = record.target.nodeType === 1 ? record.target as Element : null
+            if (target !== null && record.type === 'attributes') reanchorAround(target)
           }
         } catch {
           // Fail-closed: a tagging error must never break the host page.
         }
       })
-      observer.observe(doc.body ?? doc.documentElement, { childList: true, subtree: true })
+      observer.observe(doc.body ?? doc.documentElement, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: [...ANCHOR_ATTRIBUTES],
+      })
     },
 
     stop() {

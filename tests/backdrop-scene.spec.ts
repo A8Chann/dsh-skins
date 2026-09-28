@@ -160,3 +160,77 @@ describe('backdrop scene content marker', () => {
     expect(frames.filter(callback => callback !== null)).toHaveLength(0)
   })
 })
+
+/** The follower element the frost rides while a scene is active. */
+function frostFollower(): HTMLElement | null {
+  return document.body.querySelector<HTMLElement>('[data-dsh-composer-frost]')
+}
+
+describe('composer frost follower (#1724)', () => {
+  it('paints the frost on a body-level follower instead of the composer card', async () => {
+    // Given an active conversation with a composer card
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    document.body.appendChild(card)
+    const scrollport = appendConversationRow()
+    expect(scrollport).not.toBeNull()
+
+    // When the backdrop becomes visible
+    setSceneBackdropActive(document, 'skin', true)
+
+    // Then the card is NOT a containing block: the injected sheet carries no
+    // containing-block property for it, which is what used to redirect the
+    // shell's fixed tooltips into the scrollport and jolt the page
+    const sheet = document.head.querySelector(`style[${SCENE_NEUTRALIZER_ATTR}]`)?.textContent ?? ''
+    expect(sheet).not.toContain('[data-composer-card]')
+    expect(sheet).toContain('[data-dsh-composer-frost]')
+
+    // And the frost rides a body-level sibling: empty, inert, and outside the
+    // scrollport that must never grow
+    const follower = frostFollower()
+    expect(follower?.getAttribute('aria-hidden')).toBe('true')
+    expect((follower as HTMLElement).style.pointerEvents).toBe('none')
+    expect((follower as HTMLElement).style.position).toBe('fixed')
+    expect(follower?.parentElement).toBe(document.body)
+    expect(scrollport.contains(follower)).toBe(false)
+    expect(follower?.childElementCount).toBe(0)
+  })
+
+  it('removes the follower when the scene clears and leaves nothing behind', async () => {
+    // Given a mounted follower
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    document.body.appendChild(card)
+    appendConversationRow()
+    setSceneBackdropActive(document, 'skin', true)
+    expect(frostFollower()).not.toBeNull()
+
+    // When the last backdrop source clears
+    setSceneBackdropActive(document, 'skin', false)
+
+    // Then no orphan element survives (the frost is fully owned by the scene)
+    expect(frostFollower()).toBeNull()
+  })
+
+  it('sizes the follower to the composer card it tracks', async () => {
+    // Given a card with a measured box and a skin-provided radius
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    card.getBoundingClientRect = () => ({ top: 700, left: 320, width: 900, height: 140, right: 1220, bottom: 840, x: 320, y: 700, toJSON: () => ({}) }) as DOMRect
+    card.style.borderRadius = '18px'
+    document.body.appendChild(card)
+    appendConversationRow()
+
+    // When the scene activates and the queued frame runs
+    setSceneBackdropActive(document, 'skin', true)
+    flushFrames()
+
+    // Then the follower covers the card's border box with the card's radius
+    const follower = frostFollower()!
+    expect(follower.style.top).toBe('700px')
+    expect(follower.style.left).toBe('320px')
+    expect(follower.style.width).toBe('900px')
+    expect(follower.style.height).toBe('140px')
+    expect(follower.style.borderRadius).toBe(card.style.borderRadius)
+  })
+})

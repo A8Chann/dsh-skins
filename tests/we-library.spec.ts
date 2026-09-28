@@ -315,16 +315,25 @@ describe('buildInventory', () => {
   })
 
   it('draws the whole macOS library from the folders the user added', () => {
-    // Given macOS, where Wallpaper Engine does not exist and the built-in
-    // Apple wallpaper stores are no longer scanned at all
+    // Given an explicit manual folder and no machines of this host's own in
+    // play: the built-in Apple wallpaper stores are gone, and the Steam probes
+    // are read from an empty root so a developer machine that really has
+    // Wallpaper Engine installed (this one does) cannot change the inventory
     const folder = join(root, 'my-videos')
     mkdirSync(folder, { recursive: true })
     writeFileSync(join(folder, 'Ocean.mp4'), 'x', 'utf8')
     writeFileSync(join(folder, 'Ocean.jpg'), 'x', 'utf8')
     writeFileSync(join(folder, 'Mountains.webm'), 'x', 'utf8')
-
-    // When the inventory is assembled with auto-detection on (the macOS case)
-    const inventory = buildInventory({ manualDirs: [folder], autoDetect: true })
+    // When the inventory is assembled (auto-detection on, macOS)
+    // installDir/libraryDirs are the two auto-detected inputs, and both are
+    // pinned: a developer machine that really has Wallpaper Engine installed
+    // (this one does) must not add its library to the fixture's inventory.
+    const inventory = buildInventory({
+      manualDirs: [folder],
+      autoDetect: true,
+      installDir: null,
+      libraryDirs: [],
+    })
 
     // Then every video in the folder becomes a playable wallpaper, paired
     // with its same-stem preview, and no system entry is invented

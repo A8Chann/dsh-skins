@@ -35,7 +35,7 @@ import type { SkinBackgroundConfig } from '../core/background.ts'
 import { initialSkinBackgroundReconcileState, reconcileSkinBackgroundPublication } from '../core/background-scope.ts'
 import { SKIN_WALLPAPER_NS, WallpaperController, installBootRestore, mapDirPickResult, type WallpaperSection } from './wallpaper.ts'
 import { en, zh, type SkinCenterKey } from './locales.ts'
-import { bootSkinRuntime } from './runtime/boot.ts'
+import { bootSkinRuntime, watchPersistedSelection } from './runtime/boot.ts'
 import { PreviewCoordinator } from './preview-coordinator.ts'
 import { CustomThemeController } from './custom-theme-controller.ts'
 import { SKIN_CUSTOM_THEME_NS, type CustomThemeConfig } from '../core/custom-theme.ts'
@@ -319,6 +319,13 @@ export function apply(ctx: ClientContext): void {
     suppressBackgroundMedia: () => wallpaper.enabled() && wallpaper.isDisplaying(),
   })
   ctx.effect(() => () => runtime.shutdown(), 'ui-skin-center: runtime shutdown')
+  // Applying a skin and saving the choice are one action in the GUI, but the
+  // choice only reaches the NEXT page load. This page therefore follows it
+  // two ways: the skin-applied announcement (a workshop install, from any
+  // page) and the persisted selection (the official settings form, which the
+  // Host applies without telling this page). Issue #1740 owned by this
+  // activation, so a cleared plugin row takes the listeners with it.
+  ctx.effect(() => watchPersistedSelection(runtime), 'ui-skin-center: follow the persisted selection')
   ctx.effect(
     () => wallpaper.subscribe(() => { void runtime.controller.refresh() }),
     'ui-skin-center: wallpaper priority refresh',
