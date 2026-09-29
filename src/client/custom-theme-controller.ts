@@ -2,6 +2,7 @@ import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 import {
   CUSTOM_THEME_DEFAULTS,
+  SKIN_CUSTOM_THEME_NS,
   buildCustomThemeCss,
   normalizeCustomThemeConfig,
   type CustomThemeConfig,
@@ -198,6 +199,20 @@ export class CustomThemeController {
     this.publish()
   }
 
+  /**
+   * Identity of the settings section a refused write addressed, for the error a
+   * user sees. It carries the Host's own status and revision — which entry
+   * answered, whether it can be written, and at which revision — and never any
+   * stored configuration value, so a refused save can be diagnosed from the
+   * message alone without exposing what the user configured.
+   * @returns a short diagnostic fragment naming the section and its state.
+   */
+  private sectionState(): string {
+    const snapshot = this.scope.getSnapshot()
+    const revision = snapshot.revision === undefined ? 'none' : String(snapshot.revision)
+    return `${SKIN_CUSTOM_THEME_NS}: status ${snapshot.status}, writable ${String(snapshot.writable)}, mode ${snapshot.mode}, revision ${revision}`
+  }
+
   private queueWrite<K extends CustomThemeField>(field: K, value: CustomThemeConfig[K]): Promise<void> {
     this.pendingWrites += 1
     const pending = new Promise<void>((resolve, reject) => {
@@ -227,7 +242,7 @@ export class CustomThemeController {
         // skipped, and rejects when the transport itself failed; both leave
         // the stored profile unchanged, so neither may count as saved.
         const accepted = await this.scope.set(write.field, write.value)
-        if (!accepted) throw new Error('the Host did not accept the custom theme setting')
+        if (!accepted) throw new Error(`the Host did not accept the custom theme setting (${this.sectionState()})`)
       } catch (error) {
         settled.push({ write, ok: false, error })
         continue

@@ -19,7 +19,7 @@
  * that one form (see settings-section.ts).
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { ConfigForm, ConfigForms } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -40,6 +40,7 @@ import { PreviewCoordinator } from './preview-coordinator.ts'
 import { CustomThemeController } from './custom-theme-controller.ts'
 import { SKIN_CUSTOM_THEME_NS, type CustomThemeConfig } from '../core/custom-theme.ts'
 import { settingsSection } from './settings-section.ts'
+import { boundEntryId } from './settings-entry-id.ts'
 import { reportDailyHeartbeat } from './telemetry.ts'
 
 export type { SkinCenterComponentProps, SkinCenterInjected } from './SkinCenter.tsx'
@@ -87,29 +88,6 @@ interface SkinCenterSettings {
 }
 
 /**
- * Profile entry id the family aggregate's generated row carries.
- */
-const AGGREGATE_ENTRY_ID = 'web-ui-skin-center'
-
-/**
- * Profile entry ids this package's two patch rows carry: the aggregate's
- * generated row and the standalone bundle patch's row (`ui-skin-center`), plus
- * the legacy background namespace as the last resort.
- */
-const SKIN_CENTER_ENTRY_IDS: readonly string[] = [AGGREGATE_ENTRY_ID, 'ui-skin-center', SKIN_BACKGROUND_NS]
-
-function servedEntryId(forms: ConfigForms): string {
-  let served: readonly string[] | undefined
-  try {
-    served = forms.describe().getSnapshot().view?.namespaces.map(view => view.ns)
-  } catch {
-    served = undefined
-  }
-  if (served === undefined) return AGGREGATE_ENTRY_ID
-  return SKIN_CENTER_ENTRY_IDS.find(id => served.includes(id)) ?? SKIN_BACKGROUND_NS
-}
-
-/**
  * The configuration form of this plugin's own profile entry.
  *
  * `ctx.configForms` addresses one form per profile entry id and carries no
@@ -117,9 +95,15 @@ function servedEntryId(forms: ConfigForms): string {
  * namespace-to-entry mapping the settings group owns: `skin-background` is
  * the namespace this package has always owned, and the bridge resolves it to
  * whichever entry id the profile gave this row. A deployment without the
- * group serves no such mapping — the family namespace then stands in for the
- * entry id (a profile that names the row after it serves the same form), and
- * a page that serves neither reports the form unavailable, which each feature
+ * group serves no such mapping, so the shared forms service is asked which row
+ * it actually serves. Guessing ANOTHER package's entry id is what produced
+ * dsh-skins#17: a standalone install (`ui-skin-center`) bound the aggregate's row
+ * (`web-ui-skin-center`) whenever the describe mirror had not landed yet, and
+ * every `settings.mutate` then addressed an entry the Host does not serve, so
+ * applying and restoring a skin both failed with a rejected write and a
+ * rolled-back switch. The mirror is the only authority on the entry id, so the
+ * one guess that survives an unreadable mirror is this package's OWN row: an
+ * entry that is not served reports itself unavailable, which each feature
  * already handles by keeping its defaults and reporting a failed save.
  * @param ctx - client root context.
  * @returns the entry form carrying every preference family.
@@ -129,7 +113,7 @@ function bindConfigForm(ctx: ClientContext): ConfigForm<SkinCenterSettings> {
   if (binder !== undefined && typeof binder.bind === 'function') {
     return binder.bind<SkinCenterSettings>({ namespace: SKIN_BACKGROUND_NS })
   }
-  return ctx.configForms.get<SkinCenterSettings>(servedEntryId(ctx.configForms))
+  return ctx.configForms.get<SkinCenterSettings>(boundEntryId(ctx.configForms))
 }
 
 /**
