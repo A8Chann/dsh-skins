@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfigForm, ConfigFormSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 
 import { CustomThemeController } from '../src/client/custom-theme-controller.ts'
@@ -331,6 +331,46 @@ describe('CustomThemeController', () => {
     await controller.deactivate()
     expect(controller.getState()).toMatchObject({ applied: false, previewing: false, visible: false })
     expect(calls.at(-1)).toEqual({ field: 'applied', value: false })
+    controller.dispose()
+  })
+
+  it('deactivates an unapplied preview without writing settings', async () => {
+    const { scope } = fakeScope(CUSTOM_THEME_DEFAULTS)
+    const set = vi.spyOn(scope, 'set')
+    const controller = new CustomThemeController(scope, { doc: document })
+    controller.tryOn()
+    expect(controller.getState()).toMatchObject({ applied: false, previewing: true, visible: true })
+    const listener = vi.fn()
+    controller.subscribe(listener)
+
+    await expect(controller.deactivate()).resolves.toBeUndefined()
+
+    expect(controller.getState()).toEqual({ applied: false, previewing: false, visible: false, writeError: null })
+    expect(document.documentElement.hasAttribute('data-dsh-custom-theme')).toBe(false)
+    expect(set).not.toHaveBeenCalled()
+    expect(listener).toHaveBeenCalledOnce()
+    controller.dispose()
+  })
+
+  it('deactivates locally without writing when the settings scope is unavailable', async () => {
+    const { scope } = fakeScope({ ...CUSTOM_THEME_DEFAULTS, applied: true })
+    const set = vi.spyOn(scope, 'set')
+    const controller = new CustomThemeController(scope, { doc: document })
+    controller.tryOn()
+    expect(controller.getState()).toMatchObject({ applied: true, previewing: true, visible: true })
+    vi.spyOn(scope, 'getSnapshot').mockReturnValue({
+      ...scope.getSnapshot(), status: 'unavailable', writable: false,
+    })
+    const listener = vi.fn()
+    controller.subscribe(listener)
+
+    await expect(controller.deactivate()).resolves.toBeUndefined()
+
+    expect(controller.getState()).toEqual({ applied: false, previewing: false, visible: false, writeError: null })
+    expect(document.documentElement.hasAttribute('data-dsh-custom-theme')).toBe(false)
+    expect(set).not.toHaveBeenCalled()
+    expect(scope.getSnapshot().value.applied).toBe(true)
+    expect(listener).toHaveBeenCalledOnce()
     controller.dispose()
   })
 

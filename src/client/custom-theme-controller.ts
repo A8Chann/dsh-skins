@@ -122,11 +122,19 @@ export class CustomThemeController {
   }
 
   async deactivate(): Promise<void> {
+    if (!this.config.applied) {
+      this.previewingValue = false
+      this.suspended = false
+      this.syncDom()
+      this.publish()
+      return
+    }
     this.config = { ...this.config, applied: false }
     this.previewingValue = false
     this.suspended = false
     this.syncDom()
     this.publish()
+    if (this.scope.getSnapshot().status === 'unavailable') return
     await this.queueWrite('applied', false)
     if (this.config.applied) throw new Error('custom theme deactivation was not persisted')
   }

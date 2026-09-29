@@ -173,6 +173,54 @@ describe('built-in v2 skins: hooks lifecycle', () => {
     return out
   }
 
+  it.each(['last-exile', 'porco-rosso', 'white-snake'])(
+    '%s: cleanup restores replaced background layers and removes relocated nodes',
+    async (id) => {
+      const mod = await import(pathToFileURL(join(SKINS_DIR, id, 'hooks.mjs')).href)
+      const backgrounds = [document.createElement('div'), document.createElement('div')]
+      for (const background of backgrounds) {
+        background.style.cssText = 'position: relative; z-index: 7; opacity: 0.8;'
+        document.body.append(background)
+      }
+      const originalStyles = backgrounds.map(background => background.style.cssText)
+      const beforeNodes = new Set(document.querySelectorAll('*'))
+      const cleanups: Array<() => void> = []
+      const layers = { background: backgrounds[0]! }
+      vi.useFakeTimers()
+      try {
+        mod.default().apply({
+          skinId: id,
+          scopeAttr: id,
+          assetBase: '/api/skin-center/v2/skins/' + id,
+          layers,
+          theme: { get: () => 'light', subscribe: () => () => {} },
+          onCleanup: (fn: () => void) => { cleanups.push(fn) },
+        })
+        expect(backgrounds[0]!.children).toHaveLength(3)
+        expect(backgrounds[0]!.style.cssText).not.toBe(originalStyles[0])
+
+        // A host layer replacement must not make the old nodes unreachable
+        // to cleanup, even if one of them has been moved elsewhere.
+        document.body.append(backgrounds[0]!.firstElementChild!)
+        layers.background = backgrounds[1]!
+        await vi.advanceTimersByTimeAsync(100)
+        expect(backgrounds[1]!.children).toHaveLength(3)
+
+        for (const cleanup of [...cleanups].reverse()) cleanup()
+        for (const cleanup of cleanups) cleanup()
+        await vi.advanceTimersByTimeAsync(1000)
+
+        expect(backgrounds.map(background => background.style.cssText)).toEqual(originalStyles)
+        const survivors = [...document.querySelectorAll('*')].filter(el => !beforeNodes.has(el))
+        expect(survivors.map(el => el.outerHTML.slice(0, 120))).toEqual([])
+      } finally {
+        for (const cleanup of [...cleanups].reverse()) cleanup()
+        for (const background of backgrounds) background.remove()
+        vi.useRealTimers()
+      }
+    },
+  )
+
   for (const id of hookSkinIds) {
     it(id + ': import is side-effect free and apply/cleanup leaves nothing behind', async () => {
       // Six real decoration-layer divs, as the controller mounts them.

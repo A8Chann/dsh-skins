@@ -49,6 +49,11 @@ export const REVIEWED_SKIN_HOOKS: Readonly<Record<string, ReviewedSkinHooksIdent
     manifestSha256: "a655bbde8580eddb45271949a7864355cc5c368f91bd811f3632809134c9c3e8",
     hooksSha256: "f82cf61957efb9d9f53557637b00333aa307b3c9642e73620afdbb1fa9511e9e",
   },
+  "last-exile": {
+    entry: "hooks.mjs",
+    manifestSha256: "ce6f66c6da9f4ab6e350784f9a837f73caaeef492da97ad43f20beed4097d947",
+    hooksSha256: "1472017007cc8c99385f27f287d1e42d8f0af07c93a4923bc96c461275173a03",
+  },
   "maid-atelier": {
     entry: "hooks.mjs",
     manifestSha256: "7596a704bce65006381d27417d4c12bb09d7e5ede038a6f486cfa58e62314aa5",
@@ -78,6 +83,11 @@ export const REVIEWED_SKIN_HOOKS: Readonly<Record<string, ReviewedSkinHooksIdent
     entry: "hooks.mjs",
     manifestSha256: "76cfe0d34f644fcaff6c03dbf84fd82ececf18ef56f3c791a9ab0b5b17a30615",
     hooksSha256: "f39b57db0de26c1b0972cd7160d6197c281c4d66ba6abb6fe193a666da0d5f22",
+  },
+  "porco-rosso": {
+    entry: "hooks.mjs",
+    manifestSha256: "2b556e8e7481859be70b3123031607a4819b2e63d5173846954db1ffb4b364ab",
+    hooksSha256: "41c0a7ba9af1360a6e9427db34a0bc0da4d61bba04d5cbf6ba613831475b1474",
   },
   "starry-nocturne": {
     entry: "hooks.mjs",
@@ -113,6 +123,11 @@ export const REVIEWED_SKIN_HOOKS: Readonly<Record<string, ReviewedSkinHooksIdent
     entry: "hooks.mjs",
     manifestSha256: "fa53ef0c536e672fad0448b199f784d22ee7f1a2dd4da6a06c45836800d33331",
     hooksSha256: "beb0f140dab1abb40bda52ad2ae1970feb761e2184e64e1d5810fab7c32dfff3",
+  },
+  "white-snake": {
+    entry: "hooks.mjs",
+    manifestSha256: "8ccc4052918b0796e731d0211ccf8ee769240bea0f07374e1740d6572dbcd97b",
+    hooksSha256: "b8df769405646e50bab4fd3993896d81e0db28201dd2c79480c89002efaca9e9",
   },
   "xp": {
     entry: "hooks.mjs",
