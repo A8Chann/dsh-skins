@@ -60,6 +60,22 @@ under the darwin strip) into `--orca-shell-top-inset` and the light's `top` is
 activation's style bookkeeping, so the cleanup restores whatever was there
 before.
 
+**The offset is re-read from the layout, never remembered against the mount that
+asked for it.** The boxes the offset comes from belong to the shell: the caption
+strip's height, the margins the strip and the row carry, the pane's padding. They
+arrive with the shell's stylesheets, which can land after the DOM they size, so a
+strip read while it is still unstyled reports the browser-shell offset. The
+measurement is therefore taken on every mount and again whenever one of those
+boxes changes size — a `ResizeObserver` watches the pane, the resolved row and
+the row's preceding sibling (the strip), and re-observes them when a rail-to-wide
+round replaces one. A memo keyed on the row plus the pane's first child is what
+made this a defect: the strip was already that first child when the unstyled
+offset was read, so the 0 outlived the layout and the light stayed 34px above the
+row (reported 2026-09-29 as the DSH desktop shell's top-left misalignment) while
+the wordmark moved down with the strip. The resolved row also drops
+`data-orca-logo-row` when the row itself moves, so exactly one row carries the
+marker that anchors the row's own styling.
+
 ## Alternatives considered
 
 - **Key the row on the official `.*_logoRow` / `.*_topStrip` class names.**
@@ -91,6 +107,9 @@ before.
 - **Hard-code the strip height in the stylesheet.** Rejected: the height is the
   shell's, not the skin's; the measured variable keeps the browser shell at its
   exact current geometry (`0px` inset) and follows any future caption height.
+- **Keep the structure-keyed memo and re-measure on a poll.** Rejected: the
+  pricing light's next poll is 15s away and the misalignment is visible the whole
+  time, while the observed boxes report the change in the frame it lands.
 
 ## Consequences
 
@@ -104,14 +123,23 @@ before.
 - Pinned by `tests/orca-link-hooks.spec.ts`: one case asserts the darwin fixture
   seats both nodes in the brand row, marks only that row, and writes
   `[data-orca-link-brand]` on the span; another asserts a strip that arrives
-  after the first mount leaves exactly one wordmark and chip in the row.
-- Verification: `pnpm test` (46 of 47 files pass; `tests/legacy-bridge.spec.ts`
-  fails 2 cases on the clean tree as well), `pnpm typecheck`,
+  after the first mount leaves exactly one wordmark and chip in the row; two more
+  stub the pane and row rectangles behind a `ResizeObserver` double and assert
+  that a strip sized after the first measurement moves `--orca-shell-top-inset`
+  from `0px` to `34px`, while the browser shell stays at `0px` (the first of
+  those fails without the re-measure).
+- Verification: `pnpm test` (50 files, 748 tests pass), `pnpm typecheck`,
   `pnpm skin-center:check`, `pnpm skin-hooks:check`, and the rebuilt
-  `lib/index.js`. A headless render of the live GUI with the official 52px strip
-  inserted reproduced the reported overlap (wordmark at 4,15 inside the strip)
-  and, after the fix, seats it at 16,55 in the brand row with the pricing light
-  at 4,80.
+  `lib/index.js`. The 2026-09-29 re-measure was verified twice over. In jsdom the
+  stubbed-rectangle cases above. In the live GUI, a headless Chromium against the
+  running DSH host with the darwin mark and the desktop bridge stubbed, the
+  patched hooks served in place of the installed ones: holding the caption strip
+  at `height: 0` through boot and then removing the override leaves the shipped
+  hook at `--orca-shell-top-inset: 0px` with the light at y=46 (the reported
+  top-left misalignment, `evidence/orca-link-desktop-inset-before.png`) and the
+  patched hook at `34px` with the light at y=80, the wordmark's own seat
+  (`evidence/orca-link-desktop-inset-after.png`). The browser shell measured
+  `0px` and light y=46 under both hook builds.
 - The skin is content of this repository, but the Workshop copy installed under
   `$DSH_HOME/skins/orca-link` keeps serving the previous bytes — provenance
   pins the reviewed hooks — until the market build is refreshed and the user

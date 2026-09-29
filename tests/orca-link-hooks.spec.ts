@@ -419,3 +419,110 @@ describe('orca-link hooks: composer seat and settings overlay', () => {
     expect(card.querySelector('[data-orca-composer-handle]')).toBe(null)
   })
 })
+
+describe('orca-link hooks: shell top inset', () => {
+  type ResizeCallback = () => void
+
+  class FakeResizeObserver {
+    static instances: FakeResizeObserver[] = []
+
+    readonly callback: ResizeCallback
+    observed: Element[] = []
+
+    constructor(callback: ResizeCallback) {
+      this.callback = callback
+      FakeResizeObserver.instances.push(this)
+    }
+
+    observe(node: Element): void {
+      this.observed.push(node)
+    }
+
+    unobserve(): void {}
+
+    disconnect(): void {
+      this.observed = []
+    }
+
+    fire(): void {
+      this.callback()
+    }
+  }
+
+  function seat(element: HTMLElement, top: number, height: number): void {
+    element.getBoundingClientRect = (() => ({
+      top,
+      bottom: top + height,
+      left: 0,
+      right: 280,
+      width: 280,
+      height,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    })) as unknown as () => DOMRect
+  }
+
+  function inset(): string {
+    return document.body.style.getPropertyValue('--orca-shell-top-inset')
+  }
+
+  it('re-reads the caption-strip offset when the shell styles the strip after the row mounts', () => {
+    // Given a darwin shell whose strip is not yet sized by the shell's
+    // stylesheet, so the brand row still sits at the pane's content start
+    const { ctx, runCleanup } = setup()
+    const { pane, strip, logoRow } = darwinSidebarFixture()
+    pane.style.paddingTop = '6px'
+    seat(pane, 0, 760)
+    seat(strip, 0, 0)
+    seat(logoRow, 6, 60)
+    ;(window as unknown as { ResizeObserver: typeof FakeResizeObserver }).ResizeObserver = FakeResizeObserver
+    FakeResizeObserver.instances = []
+
+    defineSkinHooks().apply(ctx)
+
+    // Then the pane-anchored chrome starts at the browser-shell offset, and the
+    // boxes that decide that offset are watched
+    expect(inset()).toBe('0px')
+    const observer = FakeResizeObserver.instances.find((instance) => instance.observed.includes(strip))
+    expect(observer).toBeDefined()
+    expect(observer?.observed).toContain(logoRow)
+    expect(observer?.observed).toContain(pane)
+
+    // When the stylesheet lands, giving the 52px strip its seat and pushing the
+    // brand row 34px down without any further DOM change
+    seat(strip, 0, 52)
+    seat(logoRow, 40, 60)
+    observer.fire()
+
+    // Then the offset follows the layout, so the pricing light keeps its seat
+    // relative to the wordmark instead of staying 34px above the row
+    expect(inset()).toBe('34px')
+
+    runCleanup()
+    expect(inset()).toBe('')
+  })
+
+  it('keeps the browser-shell offset at zero when no caption strip precedes the row', () => {
+    // Given the browser shell, whose first pane child is the brand row itself
+    const { ctx, runCleanup } = setup()
+    sidebarFixture()
+    const pane = document.querySelector("[data-slot='sidebar'] > :first-child") as HTMLElement
+    const logoRow = pane.firstElementChild as HTMLElement
+    pane.style.paddingTop = '6px'
+    seat(pane, 0, 760)
+    seat(logoRow, 6, 60)
+    ;(window as unknown as { ResizeObserver: typeof FakeResizeObserver }).ResizeObserver = FakeResizeObserver
+    FakeResizeObserver.instances = []
+
+    defineSkinHooks().apply(ctx)
+
+    // Then the offset is the browser-shell baseline and re-measures stay there
+    expect(inset()).toBe('0px')
+    seat(logoRow, 6, 60)
+    FakeResizeObserver.instances[0]?.fire()
+    expect(inset()).toBe('0px')
+
+    runCleanup()
+  })
+})
