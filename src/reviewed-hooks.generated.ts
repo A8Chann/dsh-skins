@@ -57,7 +57,7 @@ export const REVIEWED_SKIN_HOOKS: Readonly<Record<string, ReviewedSkinHooksIdent
   "maid-atelier": {
     entry: "hooks.mjs",
     manifestSha256: "7596a704bce65006381d27417d4c12bb09d7e5ede038a6f486cfa58e62314aa5",
-    hooksSha256: "c4668f9cee8192fe3c25e6a01b779bc9ec9ab1980061106e749551a7bafa4153",
+    hooksSha256: "9db1bc5a7e7260d1a9751c04635372f347aad029948929066ec5fa67d5c784fd",
   },
   "matrix": {
     entry: "hooks.mjs",

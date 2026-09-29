@@ -140,8 +140,11 @@ describe('orca-link sidebar stage geometry', () => {
     expect(plane.declarations['top']).toBe(character.declarations['top'])
     expect(plane.declarations['left']).toBe(character.declarations['left'])
     expect(plane.declarations['width']).toBe(character.declarations['width'])
-    expect(plane.declarations['height']).toBe(character.declarations['height'])
-    expect(plane.declarations['top']).toBe('58px')
+    // Its height is deliberately shorter than the painted character: the
+    // plane is a hit surface, and the plugin rows are pushed up into the
+    // lower part of the stage, so a plane as tall as the art swallowed the
+    // first rows (issue #1743). The exact stop is asserted by the next case.
+    expect(plane.declarations['height']).not.toBe(character.declarations['height'])
     // The old box stretched from the button's own slot (top/left/right offsets
     // against a 38px control); an explicitly placed box carries neither edge
     expect(plane.declarations['right']).toBeUndefined()
@@ -158,25 +161,32 @@ describe('orca-link sidebar stage geometry', () => {
       rule.context === '' && rule.selector === control.selector + ':after'
     ))
     expect(marker.declarations['position']).toBe('absolute')
-    expect(marker.declarations['top']).toBe('calc(58px + var(--orca-stage, 300px) - 66px - 12px)')
+    expect(marker.declarations['top']).toBe('calc(58px + var(--orca-stage, 300px) - 174px - 12px)')
     expect(marker.declarations['left']).toBe('calc(22px + var(--orca-sidebar-art-width, 280px) - 30px - 13px)')
   })
 
-  it('stops the hit plane at the stage seam and leaves the panel list above it', () => {
-    // Given the plane covers the character area down to the seam
+  it('stops the hit plane where the panel list begins', () => {
+    // Given the plane covers the character area from the pane top
     const planeTop = Number.parseFloat(plane.declarations['top']!)
     const planeHeight = stageOffset(plane.declarations['height'], 'the hit plane height')
-    // 58 + (stage - 66) = stage - 8: the plane ends just above the stage seam,
-    // where the panel list is pushed to
-    expect(planeTop + planeHeight.stage - planeHeight.offset).toBe(planeHeight.stage - 8)
-
-    // And the native panel list starts on the stage's own offset
+    // And the native panel list starts on its own stage offset
     expect(panelList.declarations['margin-top']).toBe('calc(var(--orca-stage, 300px) - 116px)')
     const listOffset = stageOffset(panelList.declarations['margin-top'], 'the panel list offset')
-    expect(listOffset.offset).toBeGreaterThan(planeHeight.offset - planeTop)
+    const listTop = listOffset.stage - listOffset.offset
 
-    // Then every panel row paints on a higher rung than the hit plane, so a
-    // host that moves the row slot can never hand a row's tap to the button:
+    // Then the plane ends exactly there. It used to end at stage - 8, which
+    // left it covering the first ~108px of the plugin list: the rows paint
+    // above it, but the plane is a ::before on a sibling that keeps the pane
+    // own child z-index, so a click on a row lower half opened a new session
+    // instead of the plugin (issue #1743).
+    expect(planeTop + planeHeight.stage - planeHeight.offset).toBe(listTop)
+
+    // And it is never padded past the list in either direction
+    expect(planeTop).toBeLessThan(listTop)
+    expect(planeHeight.stage - planeHeight.offset).toBeGreaterThan(0)
+
+    // And every panel row still paints on a higher rung than the hit plane, so
+    // a host that moves the row slot can never hand a row tap to the button:
     // this is the swallowed-navigation trap the pointer-events flip caused
     const planeRung = Number(plane.declarations['z-index'])
     const listRung = Number(panelList.declarations['z-index'])
